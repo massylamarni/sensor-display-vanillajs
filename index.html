@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TP temp reel</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+    <div class="sensor-display" data-target-id="sensor-chart-1" data-endpointName="/gas" onclick="toggleSensorChart">
+        <div class="sensor-display-head">
+            <div>
+                <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none">
+                    <path
+                    d="M12 9C11.1077 8.98562 10.2363 9.27003 9.52424 9.808C8.81222 10.346 8.30055 11.1066 8.07061 11.9688C7.84068 12.8311 7.90568 13.7455 8.25529 14.5665C8.6049 15.3876 9.21904 16.0682 10 16.5M12 3V5M6.6 18.4L5.2 19.8M4 13H2M6.6 7.6L5.2 6.2M20 14.5351V4C20 2.89543 19.1046 2 18 2C16.8954 2 16 2.89543 16 4V14.5351C14.8044 15.2267 14 16.5194 14 18C14 20.2091 15.7909 22 18 22C20.2091 22 22 20.2091 22 18C22 16.5194 21.1956 15.2267 20 14.5351Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    />
+                </svg>
+            </div>
+            <div>
+            <div class="sensor-display-title">
+                <div class="__sensor-display-value">Unknown</div>
+                <div>{sensorUnit}</div>
+            </div>
+            <div class="sensor-display-subtitle">
+                {sensorType}
+            </div>
+            </div>
+        </div>
+        <div class="sensor-display-body">
+            <div class="sensor-display-peaks">
+            <div>
+                <div>Max today</div>
+                <div class="__sensor-display-max-value">Unknown</div>
+            </div>
+            <div>
+                <div>Min today</div>
+                <div class="__sensor-display-min-value">Unknown</div>
+            </div>
+            </div>
+            <canvas class="sensor-display-chart" id="chart-1"></canvas>
+        </div>
+    </div>
+
+    <div class="sensor-state-display" data-endpointName="/rfid" >
+        <div class="sensor-display-head">
+            <div>
+                <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" class="__sensor-state-false">
+                    <path 
+                    d="M3 21H21M18 21V6.2C18 5.0799 18 4.51984 17.782 4.09202C17.5903 3.71569 17.2843 3.40973 16.908 3.21799C16.4802 3 15.9201 3 14.8 3H9.2C8.0799 3 7.51984 3 7.09202 3.21799C6.71569 3.40973 6.40973 3.71569 6.21799 4.09202C6 4.51984 6 5.0799 6 6.2V21M15 12H15.01" 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    />
+                </svg>
+                <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" class="__sensor-state-true hidden">
+                    <path 
+                    d="M3 21.0001L14 21V5.98924C14 4.6252 14 3.94318 13.7187 3.47045C13.472 3.05596 13.0838 2.74457 12.6257 2.59368C12.1032 2.42159 11.4374 2.56954 10.1058 2.86544L7.50582 3.44322C6.6117 3.64191 6.16464 3.74126 5.83093 3.98167C5.53658 4.19373 5.30545 4.48186 5.1623 4.8152C5 5.19312 5 5.65108 5 6.56702V21.0001M13.994 5.00007H15.8C16.9201 5.00007 17.4802 5.00007 17.908 5.21805C18.2843 5.4098 18.5903 5.71576 18.782 6.09209C19 6.51991 19 7.07996 19 8.20007V21.0001H21M11 12.0001H11.01" 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    />
+                </svg>
+            </div>
+            <div>
+            <div class="sensor-display-title">
+                <div class="__sensor-state-value">Unknown</div>
+                <div></div>
+            </div>
+            <div class="sensor-display-subtitle">
+                {stateType}
+            </div>
+            </div>
+        </div>
+        <div class="sensor-display-body">
+            <div class="sensor-display-peaks">
+                <div>
+                    <div>Last state</div>
+                    <div class="__sensor-state-last-state">Unknown</div>
+                </div>
+            </div>
+            <canvas class="sensor-display-chart" id="chart-2"></canvas>
+        </div>
+    </div>
+
+    <div class="sensor-chart __sensor-chart" id="sensor-chart-1">
+        <div class='sensor-chart-head'>
+            <div class='sensor-chart-title'>
+                {sensorType}
+            </div>
+            <div class='sensor-chart-dropdown'>
+
+            </div>
+        </div>
+        <div class='sensor-chart-body'>
+            <canvas class="sensor-chart-chart" id="chart-3"></canvas>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+    <script src="libs/chart.js"></script>
+    <script src="libs/fns-date-adapter.js"></script>
+</body>
+</html>

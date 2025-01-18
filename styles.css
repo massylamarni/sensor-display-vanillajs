@@ -1,0 +1,148 @@
+:root {
+    --background-color: #282828;
+    --foreground-color: #171717;
+    --element-color: #1F1F1F;
+    --element-border-color: #383838;
+    --signature-color: #30E48E;
+    --signature-color-filter: #30E48E10;
+    --signature-color-filter-border: #30E48E3F;
+    --greyed-text-color: #8F8F8F;
+    --default-text-color: #CFCFCF;
+  }
+  
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box !important;
+  }
+  
+  @font-face {
+    font-family: "satoshi-medium";
+    src: url("./fonts/satoshi-medium.ttf");
+  }
+  
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--foreground-color);
+    font-family: "satoshi-medium";
+  }
+  
+  button {
+    all: unset;
+    cursor: pointer;
+  }
+  
+  svg {
+    flex-shrink: 0;
+  }
+  
+  .hidden {
+    display: none !important;
+  }
+  
+  .sensor-display, .sensor-state-display {
+    display: flex;
+    flex-direction: column;
+    margin: 15px;
+    background-color: var(--element-color);
+    border: 1px solid var(--element-border-color);
+    border-radius: 15px;
+    padding: 15px;
+    height: fit-content;
+    width: fit-content;
+    cursor: pointer;
+  }
+  
+  .sensor-display-head {
+    display: flex;
+    align-items: center;
+  }
+  
+  .sensor-display-head > div:first-child {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: var(--signature-color-filter);
+    border: 1px solid var(--signature-color-filter-border);
+    border-radius: 50%;
+    padding: 10px;
+    margin-right: 15px;
+  }
+  
+  .sensor-display-head > div:first-child > svg {
+    height: 32px;
+    width: 32px;
+    color: var(--signature-color);
+  }
+  
+  .sensor-display-title {
+    display: flex;
+    align-items: end;
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--signature-color);
+  }
+  
+  .sensor-display-title > div:last-child {
+    font-size: 16px;
+    font-weight: bold;
+    margin-left: 5px;
+  }
+  
+  .sensor-display-subtitle {
+    color: var(--greyed-text-color);
+  }
+  
+  .sensor-display-body {
+    display: flex;
+    align-items: flex-end;
+  }
+  
+  .sensor-display-peaks {
+    margin-right: 15px;
+  }
+  
+  .sensor-display-peaks > div > div:first-child {
+    font-size: 12px;
+    color: var(--greyed-text-color);
+  }
+  
+  .sensor-display-peaks > div > div:last-child {
+    font-weight: bold;
+    color: white;
+  }
+  
+  .sensor-display-chart {
+    width: 200px !important;
+  }
+  
+  .sensor-chart {
+    display: flex;
+    flex-direction: column;
+    margin: 15px;
+    background-color: var(--element-color);
+    border: 1px solid var(--element-border-color);
+    border-radius: 15px;
+    padding: 15px;
+    height: fit-content;
+    width: fit-content;
+  }
+  
+  .sensor-chart-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+  }
+  
+  .sensor-chart-title {
+    color: var(--default-text-color);
+  }
+  
+  .sensor-chart-dropdown {
+  }
+  
+  .sensor-chart-chart {
+    width: 500px;
+  }
