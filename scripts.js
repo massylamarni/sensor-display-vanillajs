@@ -7,6 +7,8 @@ const CHARTS_IDS = Object.keys(CHARTS_INFO);
 const GET_ENDPOINTS = ['/api/get/gas', '/api/get/temperature', '/api/get/movement'];
 const WS_ENDPOINTS = ['/api/ws/rfid'];
 
+const SERVER_URL = "http://192.168.0.1:80";
+
 /* Init Global variables */
 let chartInsts = [];
 let sensorData = [];
@@ -16,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function () {
     updateAll(true);
     setInterval(updateAll, 3000);
 
-    ws = new WebSocket('ws://192.168.0.1/api/ws/rfid');
+    ws = new WebSocket(`ws://${SERVER_URL}/api/ws/rfid`);
                 
     ws.onopen = function() {
         console.log("WebSocket connection established.");
@@ -213,9 +215,9 @@ function storeData(endpointName, data) {            //Dependency to sensorData
     debugHere(debug_tag, debug_data_collection);
 }
 
-async function fetchData(endpointName) {
+async function fetchData(endpointName) {    //Dependency to SERVER_URL
     try {
-        const response = await fetch(endpointName);
+        const response = await fetch(SERVER_URL + endpointName);
         let data = await response.json();
 
         if (data) {
