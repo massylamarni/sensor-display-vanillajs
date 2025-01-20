@@ -7,8 +7,6 @@ const CHARTS_IDS = Object.keys(CHARTS_INFO);
 const GET_ENDPOINTS = ['/api/get/gas', '/api/get/temperature', '/api/get/movement'];
 const WS_ENDPOINTS = ['/api/ws/rfid'];
 
-const SERVER_URL = "http://192.168.0.1:80";
-
 /* Init Global variables */
 let chartInsts = [];
 let sensorData = [];
@@ -16,7 +14,7 @@ let ws;
 
 /* Init functions */
 const initClientWebSocket = () => {
-    ws = new WebSocket(`ws://${SERVER_URL}/api/ws/rfid`);
+    ws = new WebSocket(`ws://192.168.0.1:80/api/ws/rfid`);
                 
     ws.onopen = function() {
         console.log("WebSocket connection established.");
@@ -71,7 +69,7 @@ const debugHere = (debug_tag, debug_data_collection) => {
 }
 
 const checkStruct = (rawData) => {
-    return (rawData && rawData[0]);
+    return (rawData && rawData[0]) ? true : false;
 }
 
 const filterNull = (rawData) => {
@@ -92,10 +90,10 @@ const getStateObjectData = (data) => {
 //Output: {"start": {dateObj}, "end": {dateObj}}
 //Dependency to CHARTS_IDS
 const getInitialChartTimeRange = (chartId) => {
-    if (chartId == CHARTS_IDS[0] || chartId == CHARTS_IDS[2]) {
+    if (chartId == CHARTS_IDS[0] || chartId == CHARTS_IDS[1]) {
         return {"start": new Date(new Date().getTime() - 1 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
     }
-    if (chartId == CHARTS_IDS[1]) {
+    if (chartId == CHARTS_IDS[2]) {
         return {"start": new Date(new Date().getTime() - 1 * 60 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
     }
 }
@@ -104,7 +102,7 @@ const getInitialChartTimeRange = (chartId) => {
 //Dependency to sensorData and CHARTS_IDS and CHARTS_INFO
 const getInitialChartData = (chartId) => {
     const chartInfo = CHARTS_INFO[chartId];
-    if (!checkStruct(sensorData)) {
+    if (!checkStruct(sensorData[chartInfo.endpointName])) {
         const missingData = getMissingData([], getInitialChartTimeRange(chartId));
 
         return {
@@ -112,7 +110,7 @@ const getInitialChartData = (chartId) => {
             "sensorData": [],
             "missingDataAfter": getChartData(missingData.after)};
     }
-    if (chartId == CHARTS_IDS[0] || chartId == CHARTS_IDS[2]) {
+    if (chartId == CHARTS_IDS[0] || chartId == CHARTS_IDS[1]) {
         const missingData = getMissingData(sensorData[chartInfo.endpointName], getInitialChartTimeRange(chartId));
 
         return {
@@ -120,7 +118,7 @@ const getInitialChartData = (chartId) => {
             "sensorData": getChartData(sensorData[chartInfo.endpointName]),
             "missingDataAfter": getChartData(missingData.after)};
     }
-    if (chartId == CHARTS_IDS[1]) {
+    if (chartId == CHARTS_IDS[2]) {
         const missingData = getMissingData(sensorData[chartInfo.endpointName], getInitialChartTimeRange(chartId));
 
         return {
@@ -151,7 +149,8 @@ function getPeakSensorValue(dataArray) {
 function getAverageChartData(chartData, chartTimeRange) {
     const minArrayLength = 15, minTimeSpan = 1000000, relativeChunkSize = 5;
     const timeSpan = (new Date(chartTimeRange.end) - new Date(chartTimeRange.start)) / 100000;
-    const chunkSize = (dataArray.length > minArrayLength && timeSpan > minTimeSpan) ? Math.floor(timeNonce/relativeChunkSize) : 0;
+    const chunkSize = (chartData.length > minArrayLength && timeSpan > minTimeSpan) ? Math.floor(timeNonce/relativeChunkSize) : 0;
+    if (chunkSize == 0) return chartData;
 
     let averageChartData = [];
     let chunkSum = 0;
@@ -170,7 +169,7 @@ function getAverageChartData(chartData, chartTimeRange) {
 //Output_: [{"data": "value"}] or [{"data": {Object}}]
 async function fetchRawData(endpointName) {
     try {
-        const response = await fetch(SERVER_URL + endpointName, {
+        const response = await fetch(endpointName, {
             method: 'GET',
         });
         const rawData = await response.json();
@@ -223,11 +222,15 @@ function getMissingData(dataArray, chartTimeRange) {
     }
     const dataTimeRange = {"start": new Date(dataArray[0].createdAt), "end": new Date(dataArray.at(-1).createdAt)};
 
+
+    if (dataTimeRange.start <= chartTimeRange.start && dataTimeRange.end >= chartTimeRange.end) {
+        //Normal behavior
+    }
     /*
     [ds, de]
     [cs, ce  ]
     */
-    if (dataTimeRange.start <= chartTimeRange.start && dataTimeRange.end < chartTimeRange.end) {
+    else if (dataTimeRange.start <= chartTimeRange.start && dataTimeRange.end < chartTimeRange.end) {
         missingData.after = [
             {"data": dataArray.at(-1).data, "createdAt": new Date(dataTimeRange.end).toString()},
             {"data": predictedValue, "createdAt": new Date(dataTimeRange.end.getTime()+delay).toString()},
@@ -478,13 +481,13 @@ async function updateAll() {
 
 //Dependecy to sensorData and CHARTS_INFO
 function updateSensorDisplayEls() {
-    if (!checkStruct(sensorData)) return;
     const sensorDisplayEls = document.getElementsByClassName("sensor-display");
     const sensorStateDisplayEls = document.getElementsByClassName("sensor-state-display");
 
     Array.from(sensorDisplayEls).forEach((sensorDisplayEl, i) => {
         const endpointName = sensorDisplayEl.getAttribute("data-endpointName");
-        const missingDataValue = getMissingData(sensorData[endpointName], getInitialChartTimeRange(CHARTS_IDS[i].chartType));
+        if (!checkStruct(sensorData[endpointName])) return;
+        const missingDataValue = getMissingData(sensorData[endpointName], getInitialChartTimeRange(CHARTS_IDS[i]));
         const sensorDisplayValue =  checkStruct(missingDataValue) ? missingDataValue.at(-1).data : sensorData[endpointName].at(-1).data;
         const sensorDisplayValuePeaks = getPeakSensorValue(sensorData[endpointName]);
 
@@ -497,8 +500,9 @@ function updateSensorDisplayEls() {
     });
     Array.from(sensorStateDisplayEls).forEach((sensorStateDisplayEl, i) => {
         const endpointName = sensorStateDisplayEl.getAttribute("data-endpointName");
+        if (!checkStruct(sensorData[endpointName])) return;
         const stateObjectData = getStateObjectData(sensorData[endpointName].at(-1).data);
-        const missingDataValue = getMissingData(sensorData[endpointName], getInitialChartTimeRange(CHARTS_IDS[i].chartType));
+        const missingDataValue = getMissingData(sensorData[endpointName], getInitialChartTimeRange(CHARTS_IDS[i]));
         const sensorStateState =  checkStruct(missingDataValue) ? "Unknown" : (stateObjectData.state ? "True" : "False");
         const sensorStateStateValue = checkStruct(missingDataValue) ? false : stateObjectData.state;
         const sensorStateData = stateObjectData.type == 0 ? stateObjectData.data : (stateObjectData.state ? "True" : "False");
