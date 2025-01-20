@@ -1,20 +1,63 @@
 const CHARTS_INFO = {
-    'chart-1': {'endpointName': '/gas', 'chartType': 0},
-    'chart-2': {'endpointName': '/rfid', 'chartType': 0},
-    'chart-3': {'endpointName': '/gas', 'chartType': 1},
+    'chart-1': {'endpointName': '/api/get/gas', 'endpointType': 'GET', 'chartType': 0},
+    'chart-2': {'endpointName': '/api/ws/rfid', 'endpointType': 'WS', 'chartType': 0},
+    'chart-3': {'endpointName': '/api/get/gas', 'endpointType': 'GET', 'chartType': 1},
 }
 const CHARTS_IDS = Object.keys(CHARTS_INFO);
+const GET_ENDPOINTS = ['/api/get/gas', '/api/get/temperature', '/api/get/movement'];
+const WS_ENDPOINTS = ['/api/ws/rfid'];
 
 /* Init Global variables */
 let chartInsts = [];
 let sensorData = [];
-let chartData = [];
-let chartTime = [];
+let ws;
 
 document.addEventListener('DOMContentLoaded', function () {
     updateAll(true);
-    setInterval(updateAll, 10000);
+    setInterval(updateAll, 3000);
+
+    ws = new WebSocket('ws://192.168.0.1/api/ws/rfid');
+                
+    ws.onopen = function() {
+        console.log("WebSocket connection established.");
+    };
+
+    ws.onerror = function(error) {
+        console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = function() {
+        console.log("WebSocket connection closed.");
+    };
+
+    ws.onmessage = function(event) {
+        try {
+            storeData('/api/ws/rfid', JSON.parse(event.data));
+        } catch (e) {
+            console.error("Error parsing received data:", e);
+        }
+    };    
 });
+
+const debugHere = (debug_tag, debug_data_collection) => {
+    const DEBUG_SMALL_WALL = '----';
+    const DEBUG_HALF_WALL = '--------------------------------------------------';
+    const ToggleDebug = true;
+    if (ToggleDebug) {
+        console.log(DEBUG_HALF_WALL + 'START ' + debug_tag + DEBUG_HALF_WALL);
+        debug_data_collection.forEach(debug_data => {
+            if (debug_data.type == 0) {
+                console.log(`${DEBUG_SMALL_WALL} ${debug_data.title} = ${debug_data.value} ${DEBUG_SMALL_WALL}`);
+            }
+            else if (debug_data.type == 1) {
+                console.log(DEBUG_SMALL_WALL + 'START ' + debug_data.title + DEBUG_SMALL_WALL);
+                console.log(debug_data.value);
+                console.log(DEBUG_SMALL_WALL + 'END ' + debug_data.title + DEBUG_SMALL_WALL);
+            }
+        });
+        console.log(DEBUG_HALF_WALL + 'END ' + debug_tag + DEBUG_HALF_WALL);
+    } 
+}
 
 const checkStruct = (data) => {
     return (data && data[0]);
@@ -29,6 +72,9 @@ const filterNull = (data) => {
 }
 
 function missingDataSpectrum(data, displayTimeRange) {
+    const debug_tag = 'missingDataSpectrum';
+    let debug_switch = '-1';
+
     let missingData = [];
     const delay = 5000;
     const dummyValue = "0";
@@ -38,11 +84,13 @@ function missingDataSpectrum(data, displayTimeRange) {
     ];
     
     if (!checkStruct(data)) {
-    missingData = defaultMissingData;
+        missingData = defaultMissingData;
+        debug_switch = 'defaultMissingData';
     } else {
     const dataTime = {"start": new Date(data[0].createdAt), "end": new Date(data[data.length-1].createdAt)};
     if (dataTime.start <= displayTimeRange.start && dataTime.end >= displayTimeRange.end) {
         //Normal behavior
+        debug_switch = 'Normal behavior';
     }
     else if (dataTime.start <= displayTimeRange.start && dataTime.end < displayTimeRange.end) {
         missingData = [
@@ -50,6 +98,7 @@ function missingDataSpectrum(data, displayTimeRange) {
         {"data": dummyValue, "createdAt": new Date(dataTime.end.getTime()+delay).toString()},
         {"data": dummyValue, "createdAt": new Date(displayTimeRange.end).toString()}
         ];
+        debug_switch = 'Addition at the end';
     }
     else if (dataTime.start > displayTimeRange.start && dataTime.end >= displayTimeRange.end) {
         missingData = [
@@ -57,6 +106,7 @@ function missingDataSpectrum(data, displayTimeRange) {
         {"data": dummyValue, "createdAt": new Date(dataTime.start.getTime()-delay).toString()},
         {"data": data[0].data, "createdAt": new Date(dataTime.start).toString()},
         ];
+        debug_switch = 'Addition at the beginning';
     }
     else if (dataTime.start > displayTimeRange.start && dataTime.end < displayTimeRange.end) {
         missingData = [
@@ -69,10 +119,25 @@ function missingDataSpectrum(data, displayTimeRange) {
         {"data": dummyValue, "createdAt": new Date(dataTime.end.getTime()+delay).toString()},
         {"data": dummyValue, "createdAt": new Date(displayTimeRange.end).toString()}
         ];
+        debug_switch = 'Addition in both sides';
     } else {
         missingData = defaultMissingData;
+        debug_switch = 'defaultMissingData';
     }
     }
+    const debug_data_collection = [
+        {
+            "title": 'debug_switch',
+            "value": debug_switch,
+            "type": 0
+        },
+        {
+            "title": 'missingData',
+            "value": missingData,
+            "type": 1
+        }
+    ];
+    debugHere(debug_tag, debug_data_collection);
     return missingData;
 }
 
@@ -104,6 +169,8 @@ function averageData(data, chunkSize) {
 }
 
 function formatSensorData(sensorData, displayTimeRange) {
+    const debug_tag = 'formatSensorData';
+
     const chartData = sensorData.map(entry => {
       return {"x": new Date(entry.createdAt), "y": entry.data.uid ? (entry.data.is_valid == "1" ? 1 : 0) : parseFloat(entry.data)}
     });
@@ -113,47 +180,91 @@ function formatSensorData(sensorData, displayTimeRange) {
     const timeNonce = timeSpan / 100000;
     const baseChunkSize = 5;
     const chunkSize = (sensorData.length > maxEntrySize && timeSpan > maxTimeSpan) ? Math.floor(timeNonce/baseChunkSize) : 0;
-    return chunkSize == 0 ? chartData : averageData(chartData, chunkSize);
+    const formattedData = chunkSize == 0 ? chartData : averageData(chartData, chunkSize);
+
+    const debug_data_collection = [
+        {
+            "title": 'formattedData',
+            "value": formattedData,
+            "type": 1
+        }
+    ];
+    debugHere(debug_tag, debug_data_collection);
+    return formattedData;
 }
 
-async function fetchDataAndStore(endpointName) {        //Dependency to sensorData
+function storeData(endpointName, data) {            //Dependency to sensorData
+    const debug_tag = 'storeData';
     const localStorageData = JSON.parse(localStorage.getItem(endpointName)) || [];
+
+    data = {...data, 'createdAt': new Date()};
+    localStorageData.push(data);
+    localStorage.setItem(endpointName, JSON.stringify(localStorageData));
+
+    sensorData[endpointName] = localStorageData;
+
+    const debug_data_collection = [
+        {
+            "title": `sensorData[${endpointName}]`,
+            "value": sensorData[endpointName],
+            "type": 1
+        }
+    ];
+    debugHere(debug_tag, debug_data_collection);
+}
+
+async function fetchData(endpointName) {
     try {
         const response = await fetch(endpointName);
-        const data = await response.json();
+        let data = await response.json();
 
         if (data) {
-            localStorageData.push(data);
-            localStorage.setItem(endpointName, JSON.stringify(localStorageData));
+            storeData(endpointName, data);
         }
-        sensorData[endpointName] = localStorageData;
     } catch (error) {
-        sensorData[endpointName] = localStorageData;
         console.error('Error fetching or storing data:', error);
     }
 }
 
 function getProcessedChartData(chartElId) {      //Dependency to sensorData and CHARTS_INFO
+    const debug_tag = 'getProcessedChartData';
+
     const chartInfo = CHARTS_INFO[chartElId];
+    let processedChartData;
     if (chartInfo.chartType == 0) {
-        return {
+        processedChartData = {
             "sensorData": formatSensorData(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId)),
             "missingData": formatSensorData(missingDataSpectrum(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId)), getChartTimeRange(chartElId))};
     }
     else if (chartInfo.chartType == 1) {
-        return {
+        processedChartData = {
             "sensorData": formatSensorData(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId)),
             "missingData": formatSensorData(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId))};
     }
+
+    const debug_data_collection = [
+        {
+            "title": 'switch',
+            "value": chartInfo.chartType,
+            "type": 0
+        },
+        {
+            "title": 'processedChartData',
+            "value": processedChartData,
+            "type": 1
+        }
+    ];
+    debugHere(debug_tag, debug_data_collection);
+    return processedChartData;
 }
 
 function getChartTimeRange(chartElId) {     //Dependency to CHART_INFO
     const chartInfo = CHARTS_INFO[chartElId];
     if (chartInfo.chartType == 0) {
-        return {"start": new Date(new Date().getTime() - 1 * 60 * 1000), "end": new Date()}
+        return {"start": new Date(new Date().getTime() - 1 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
     }
     else if (chartInfo.chartType == 1) {
-        return {"start": new Date(new Date().getTime() - 5 * 60 * 60 * 1000), "end": new Date()}
+        return {"start": new Date(new Date().getTime() - 1 * 60 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
     }
 }
 
@@ -165,7 +276,7 @@ function updateSensorDisplayEls() {     //Dependecy to sensorData and CHARTS_INF
         const endpointName = sensorDisplayEl.getAttribute("data-endpointName");
         const sensorLastValue = sensorData[endpointName].at(-1).data;
         const missingDataValue = missingDataSpectrum(sensorData[endpointName], getChartTimeRange(CHARTS_IDS[i]));
-        const sensorDisplayValue =  missingDataValue ? missingDataValue.at(-1).data : sensorLastValue;
+        const sensorDisplayValue =  checkStruct(missingDataValue) ? missingDataValue.at(-1).data : sensorLastValue;
         const sensorDisplayValuePeaks = getPeakSensorValue(sensorData[endpointName]);
 
         const sensorDisplayValueEl = sensorDisplayEl.getElementsByClassName('__sensor-display-value')[0];
@@ -179,9 +290,9 @@ function updateSensorDisplayEls() {     //Dependecy to sensorData and CHARTS_INF
         const endpointName = sensorStateDisplayEl.getAttribute("data-endpointName");
         const sensorLastValue = sensorData[endpointName].at(-1).data;
         const missingDataValue = missingDataSpectrum(sensorData[endpointName], getChartTimeRange(CHARTS_IDS[i]));
-        const sensorStateValue =  missingDataValue ? "Unknown" : sensorLastValue.uid ? (sensorLastValue.is_valid ? "Access granted" : "Access denied") : (sensorLastValue ? "Detected" : "None");
+        const sensorStateValue =  checkStruct(missingDataValue) ? "Unknown" : sensorLastValue.uid ? (sensorLastValue.is_valid ? "Access granted" : "Access denied") : (sensorLastValue ? "Detected" : "None");
         const sensorStateLastState = sensorLastValue.uid ? sensorLastValue.uid : (sensorLastValue ? "Detected" : "None");
-        const sensorStateCurrentState = missingDataValue ? false : sensorLastValue.uid ? (sensorLastValue.is_valid ? true : false) : (sensorLastValue ? true : false);
+        const sensorStateCurrentState = checkStruct(missingDataValue) ? false : sensorLastValue.uid ? (sensorLastValue.is_valid ? true : false) : (sensorLastValue ? true : false);
 
         const sensorStateValueEl = sensorStateDisplayEl.getElementsByClassName('__sensor-state-value')[0];
         const sensorStateLastStateEl = sensorStateDisplayEl.getElementsByClassName('__sensor-state-last-state')[0];
@@ -220,23 +331,23 @@ function setChart(chartElId) {     //Dependecy to charData
             scales: {
                 x: {
                     type: 'time',
-                    display: false, // Remove X-axis labels
+                    display: true, // Remove X-axis labels
                     grid: {
                     display: false // Remove grid lines for X-axis
                     },
                     ticks: {
-                    display: false // Remove ticks (numbers) on X-axis
+                    display: true // Remove ticks (numbers) on X-axis
                     },
                     min: getChartTimeRange(chartElId).start,
                     max: getChartTimeRange(chartElId).end
                 },
                 y: {
-                    display: false, // Remove Y-axis labels
+                    display: true, // Remove Y-axis labels
                     grid: {
                     display: false // Remove grid lines for Y-axis
                     },
                     ticks: {
-                    display: false // Remove ticks (numbers) on Y-axis
+                    display: true // Remove ticks (numbers) on Y-axis
                     },
                     min: 0,
                 }
@@ -327,6 +438,19 @@ function setChart(chartElId) {     //Dependecy to charData
                 gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
                 return gradient;
                 },
+            },
+            { 
+                data: getProcessedChartData(chartElId).sensorData,
+                fill: true,
+                tension: 0.5,
+                pointRadius: 0,
+                borderColor: "rgba(48, 228, 142, 1)",
+                backgroundColor: function(context) {
+                const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
+                gradient.addColorStop(0.5, 'rgba(48, 228, 142, 0.1)');
+                gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
+                return gradient;
+                },
             },/*
             { 
                 data: getProcessedChartData(chartElId).missingData,
@@ -352,9 +476,13 @@ function setChart(chartElId) {     //Dependecy to charData
     });
 }
 
-async function updateAll(isInit) {      //Dependecy to CHART_IDS and ChartInsts
-    await fetchDataAndStore('/gas');
-    await fetchDataAndStore('/rfid');
+async function updateAll(isInit) {      //Dependecy to CHART_IDS, CHART_INFO and ChartInsts
+    const debug_tag = 'updateAll';
+
+    for (let i = 0; i < CHARTS_IDS.length; i++) {
+        const chartInfo = CHARTS_INFO[CHARTS_IDS[i]];
+        if (chartInfo.endpointType == 'GET') await fetchData(chartInfo.endpointName);
+    }
     updateSensorDisplayEls();
     if (isInit) {
         for (let i = 0; i < CHARTS_IDS.length; i++) {
@@ -362,10 +490,25 @@ async function updateAll(isInit) {      //Dependecy to CHART_IDS and ChartInsts
         }
     } else {
         for (let i = 0; i < CHARTS_IDS.length; i++) {
-            chartInsts[CHARTS_IDS[i]].data.datasets[0].data = getProcessedChartData(CHARTS_IDS[i]);
+            chartInsts[CHARTS_IDS[i]].data.datasets[0].data = getProcessedChartData(CHARTS_IDS[i]).sensorData;
+            chartInsts[CHARTS_IDS[i]].data.datasets[1].data = getProcessedChartData(CHARTS_IDS[i]).missingData;
             chartInsts[CHARTS_IDS[i]].options.scales.x.min = getChartTimeRange(CHARTS_IDS[i]).start;
             chartInsts[CHARTS_IDS[i]].options.scales.x.max = getChartTimeRange(CHARTS_IDS[i]).end;
             chartInsts[CHARTS_IDS[i]].update();
+
+            const debug_data_collection = [
+                {
+                    "title": 'switch',
+                    "value": isInit,
+                    "type": 0
+                },
+                {
+                    "title": `chartInsts[${CHARTS_IDS[i]}].data.datasets[0].data`,
+                    "value": chartInsts[CHARTS_IDS[i]].data.datasets[0].data,
+                    "type": 1
+                }
+            ];
+            debugHere(debug_tag, debug_data_collection);
         }
     }
 }

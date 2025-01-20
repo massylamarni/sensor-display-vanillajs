@@ -8,7 +8,7 @@
     <link rel="icon" href="/favicon.ico">
 </head>
 <body>
-    <div class="sensor-display" data-target-id="sensor-chart-1" data-endpointName="/gas" onclick="toggleSensorChart">
+    <div class="sensor-display" data-target-id="sensor-chart-1" data-endpointName="/api/get/gas" onclick="toggleSensorChart">
         <div class="sensor-display-head">
             <div>
                 <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none">
@@ -46,7 +46,7 @@
         </div>
     </div>
 
-    <div class="sensor-state-display" data-endpointName="/rfid" >
+    <div class="sensor-state-display" data-endpointName="/api/ws/rfid" >
         <div class="sensor-display-head">
             <div>
                 <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" class="__sensor-state-false">
