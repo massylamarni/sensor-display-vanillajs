@@ -14,10 +14,8 @@ let chartInsts = [];
 let sensorData = [];
 let ws;
 
-document.addEventListener('DOMContentLoaded', function () {
-    updateAll(true);
-    setInterval(updateAll, 3000);
-
+/* Init functions */
+const initClientWebSocket = () => {
     ws = new WebSocket(`ws://${SERVER_URL}/api/ws/rfid`);
                 
     ws.onopen = function() {
@@ -33,12 +31,23 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     ws.onmessage = function(event) {
-        try {
-            storeData('/api/ws/rfid', JSON.parse(event.data));
-        } catch (e) {
-            console.error("Error parsing received data:", e);
+        for (let i = 0; i < WS_ENDPOINTS.length; i++) {
+            storeData(WS_ENDPOINTS[i], JSON.parse(event.data));
         }
-    };    
+    }; 
+}
+
+const initCharts = () => {
+    for (let i = 0; i < CHARTS_IDS.length; i++) {
+        chartInsts[CHARTS_IDS[i]] = setChart(CHARTS_IDS[i]);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    initClientWebSocket();
+    initCharts();
+
+    setInterval(updateAll, 3000); 
 });
 
 const debugHere = (debug_tag, debug_data_collection) => {
@@ -61,259 +70,208 @@ const debugHere = (debug_tag, debug_data_collection) => {
     } 
 }
 
-const checkStruct = (data) => {
-    return (data && data[0]);
+const checkStruct = (rawData) => {
+    return (rawData && rawData[0]);
 }
 
-const filterNull = (data) => {
-    if (checkStruct(data)) {
-        const filteredData = data.filter(entry => (entry.data != null));
-        return filteredData;
-    }
-    return false;
+const filterNull = (rawData) => {
+    if (checkStruct(rawData)) return [];
+    const filteredDataArray = rawData.filter(data => (data.data != null));
+    return filteredDataArray;
 }
 
-function missingDataSpectrum(data, displayTimeRange) {
-    const debug_tag = 'missingDataSpectrum';
-    let debug_switch = '-1';
+//Specific structure to the rawData state object
+const getStateObjectData = (data) => {
+    if (typeof data !== 'object') return false;
+    const keys = Object.keys(data);
+    let type;
+    (data[keys[0]] !== '1' && data[keys[0]] !== '0') ? type = 0 : type = 1;
+    return {'data': data[keys[0]], 'state': type === 0 ? (data[keys[1]] !== '0') : (data[keys[0]] !== '0'), 'type': type}
+}
 
-    let missingData = [];
-    const delay = 5000;
-    const dummyValue = "0";
-    const defaultMissingData = [
-    {"data": dummyValue, "createdAt": new Date(displayTimeRange.start).toString()},
-    {"data": dummyValue, "createdAt": new Date(displayTimeRange.end).toString()} 
-    ];
-    
-    if (!checkStruct(data)) {
-        missingData = defaultMissingData;
-        debug_switch = 'defaultMissingData';
-    } else {
-    const dataTime = {"start": new Date(data[0].createdAt), "end": new Date(data[data.length-1].createdAt)};
-    if (dataTime.start <= displayTimeRange.start && dataTime.end >= displayTimeRange.end) {
-        //Normal behavior
-        debug_switch = 'Normal behavior';
+//Output: {"start": {dateObj}, "end": {dateObj}}
+//Dependency to CHARTS_IDS
+const getInitialChartTimeRange = (chartId) => {
+    if (chartId == CHARTS_IDS[0] || chartId == CHARTS_IDS[2]) {
+        return {"start": new Date(new Date().getTime() - 1 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
     }
-    else if (dataTime.start <= displayTimeRange.start && dataTime.end < displayTimeRange.end) {
-        missingData = [
-        {"data": data[data.length-1].data, "createdAt": new Date(dataTime.end).toString()},
-        {"data": dummyValue, "createdAt": new Date(dataTime.end.getTime()+delay).toString()},
-        {"data": dummyValue, "createdAt": new Date(displayTimeRange.end).toString()}
-        ];
-        debug_switch = 'Addition at the end';
+    if (chartId == CHARTS_IDS[1]) {
+        return {"start": new Date(new Date().getTime() - 1 * 60 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
     }
-    else if (dataTime.start > displayTimeRange.start && dataTime.end >= displayTimeRange.end) {
-        missingData = [
-        {"data": dummyValue, "createdAt": new Date(displayTimeRange.start).toString()},
-        {"data": dummyValue, "createdAt": new Date(dataTime.start.getTime()-delay).toString()},
-        {"data": data[0].data, "createdAt": new Date(dataTime.start).toString()},
-        ];
-        debug_switch = 'Addition at the beginning';
+}
+
+//Output: {"missingDataBefore": [chartData], "sensorData": [chartData], "missingDataAfter": [chartData]}
+//Dependency to sensorData and CHARTS_IDS and CHARTS_INFO
+const getInitialChartData = (chartId) => {
+    const chartInfo = CHARTS_INFO[chartId];
+    if (!checkStruct(sensorData)) {
+        const missingData = getMissingData([], getInitialChartTimeRange(chartId));
+
+        return {
+            "missingDataBefore": getChartData(missingData.before),
+            "sensorData": [],
+            "missingDataAfter": getChartData(missingData.after)};
     }
-    else if (dataTime.start > displayTimeRange.start && dataTime.end < displayTimeRange.end) {
-        missingData = [
-        /*
-        {"data": dummyValue, "createdAt": new Date(displayTimeRange.start).toString()},
-        {"data": dummyValue, "createdAt": new Date(dataTime.start.getTime()-delay).toString()},
-        {"data": data[0].data, "createdAt": new Date(dataTime.start).toString()},
-        */
-        {"data": data[data.length-1].data, "createdAt": new Date(dataTime.end).toString()},
-        {"data": dummyValue, "createdAt": new Date(dataTime.end.getTime()+delay).toString()},
-        {"data": dummyValue, "createdAt": new Date(displayTimeRange.end).toString()}
-        ];
-        debug_switch = 'Addition in both sides';
-    } else {
-        missingData = defaultMissingData;
-        debug_switch = 'defaultMissingData';
+    if (chartId == CHARTS_IDS[0] || chartId == CHARTS_IDS[2]) {
+        const missingData = getMissingData(sensorData[chartInfo.endpointName], getInitialChartTimeRange(chartId));
+
+        return {
+            "missingDataBefore": getChartData(missingData.before),
+            "sensorData": getChartData(sensorData[chartInfo.endpointName]),
+            "missingDataAfter": getChartData(missingData.after)};
     }
+    if (chartId == CHARTS_IDS[1]) {
+        const missingData = getMissingData(sensorData[chartInfo.endpointName], getInitialChartTimeRange(chartId));
+
+        return {
+            "missingDataBefore": getChartData(missingData.before),
+            "sensorData": getAverageChartData(getChartData(sensorData[chartInfo.endpointName]), getInitialChartTimeRange(chartId)),
+            "missingDataAfter": getChartData(missingData.after)};
     }
-    const debug_data_collection = [
-        {
-            "title": 'debug_switch',
-            "value": debug_switch,
-            "type": 0
-        },
-        {
-            "title": 'missingData',
-            "value": missingData,
-            "type": 1
+}
+
+//Input: [{"data": "value", "createdAt": "timeString"}],
+//Output: {"min": value, "max": value}
+function getPeakSensorValue(dataArray) {
+    if (!checkStruct(dataArray)) return {"min": "Unknown", "max": "Unknown"};
+    let max = dataArray[0].data, min = dataArray[0].data;
+    for (let i = 0; i < dataArray.length; i++) {
+        if (dataArray[i].data < min) {
+            min = dataArray[i].data;
         }
-    ];
-    debugHere(debug_tag, debug_data_collection);
-    return missingData;
-}
-
-function getPeakSensorValue(sensorData) {
-    let max = sensorData[sensorData.length-1].data, min = sensorData[sensorData.length-1].data;
-    for (let i = 0; i < sensorData.length; i++) {
-        if (sensorData[i].data < min) {
-            min = sensorData[i].data;
-        }
-        if (sensorData[i].data > max) {
-            max = sensorData[i].data;
+        if (dataArray[i].data > max) {
+            max = dataArray[i].data;
         }
     }
     return {"min": min, "max": max};
 }
 
-function averageData(data, chunkSize) {
-    let avgs = [];
+//Input [{"x": "timeString", "y": "value"}],
+//Output: [{"x": "timeString", "y": "averagValue"}]
+function getAverageChartData(chartData, chartTimeRange) {
+    const minArrayLength = 15, minTimeSpan = 1000000, relativeChunkSize = 5;
+    const timeSpan = (new Date(chartTimeRange.end) - new Date(chartTimeRange.start)) / 100000;
+    const chunkSize = (dataArray.length > minArrayLength && timeSpan > minTimeSpan) ? Math.floor(timeNonce/relativeChunkSize) : 0;
+
+    let averageChartData = [];
     let chunkSum = 0;
-    for (let i = 0; i < data.length; i++) {
-        chunkSum = chunkSum + data[i].y;
+    for (let i = 0; i < chartData.length; i++) {
+        chunkSum = chunkSum + chartData[i].y;
         if (i%chunkSize === 0) {
-            avgs.push({"x": data[i].x, "y": chunkSum/chunkSize});
+            averageChartData.push({"x": chartData[i].x, "y": chunkSum/chunkSize});
             chunkSum = 0;
-        }  
-    }
-    if (chunkSum != 0) avgs.push({"x": data[data.length-1].x, "y": chunkSum/chunkSize});
-    return avgs;
-}
-
-function formatSensorData(sensorData, displayTimeRange) {
-    const debug_tag = 'formatSensorData';
-
-    const chartData = sensorData.map(entry => {
-      return {"x": new Date(entry.createdAt), "y": entry.data.uid ? (entry.data.is_valid == "1" ? 1 : 0) : parseFloat(entry.data)}
-    });
-    const maxEntrySize = 15;
-    const maxTimeSpan = 1000000;
-    const timeSpan = new Date(displayTimeRange.end) - new Date(displayTimeRange.start);
-    const timeNonce = timeSpan / 100000;
-    const baseChunkSize = 5;
-    const chunkSize = (sensorData.length > maxEntrySize && timeSpan > maxTimeSpan) ? Math.floor(timeNonce/baseChunkSize) : 0;
-    const formattedData = chunkSize == 0 ? chartData : averageData(chartData, chunkSize);
-
-    const debug_data_collection = [
-        {
-            "title": 'formattedData',
-            "value": formattedData,
-            "type": 1
         }
-    ];
-    debugHere(debug_tag, debug_data_collection);
-    return formattedData;
+    }
+    if (chunkSum != 0) averageChartData.push({"x": chartData.at(-1).x, "y": chunkSum/chunkSize});
+    return averageChartData;
 }
 
-function storeData(endpointName, data) {            //Dependency to sensorData
-    const debug_tag = 'storeData';
-    const localStorageData = JSON.parse(localStorage.getItem(endpointName)) || [];
+//Input: '/endpointName',
+//Output_: [{"data": "value"}] or [{"data": {Object}}]
+async function fetchRawData(endpointName) {
+    try {
+        const response = await fetch(SERVER_URL + endpointName, {
+            method: 'GET',
+        });
+        const rawData = await response.json();
 
-    data = {...data, 'createdAt': new Date()};
+        storeData(endpointName, rawData);
+    } catch (error) {
+        console.error('Error fetching rawData: ', error);
+    }
+}
+
+//Input: [{"data": "value"}] or [{"data": {Object}}],
+//Output_: [{"data": "value", "createdAt": "timeString"}] or [{"data": {Object}, "createdAt": "timeString"}]
+//Dependency to sensorData
+function storeData(endpointName, rawData) {
+    if (checkStruct(rawData)) return;
+    const data = {...rawData, 'createdAt': new Date()};
+    const localStorageData = JSON.parse(localStorage.getItem(endpointName)) || [];
     localStorageData.push(data);
     localStorage.setItem(endpointName, JSON.stringify(localStorageData));
-
     sensorData[endpointName] = localStorageData;
+}
 
-    const debug_data_collection = [
-        {
-            "title": `sensorData[${endpointName}]`,
-            "value": sensorData[endpointName],
-            "type": 1
+//Input: [{"data": "value", "createdAt": "timeString"}] or [{"data": {Object}, "createdAt": "timeString"}]
+//Output: [{"y": value, "x": {timeObj}}]
+function getChartData(dataArray) {
+    const chartData = dataArray.map(data => {
+        const stateObjectData = getStateObjectData(data.data);
+        if (stateObjectData) {
+            return {"x": new Date(data.createdAt), "y": stateObjectData.state ? 1 : 0};
+        } else {
+            return {"x": new Date(data.createdAt), "y": parseFloat(data.data)};
         }
-    ];
-    debugHere(debug_tag, debug_data_collection);
-}
-
-async function fetchData(endpointName) {    //Dependency to SERVER_URL
-    try {
-        const response = await fetch(SERVER_URL + endpointName);
-        let data = await response.json();
-
-        if (data) {
-            storeData(endpointName, data);
-        }
-    } catch (error) {
-        console.error('Error fetching or storing data:', error);
-    }
-}
-
-function getProcessedChartData(chartElId) {      //Dependency to sensorData and CHARTS_INFO
-    const debug_tag = 'getProcessedChartData';
-
-    const chartInfo = CHARTS_INFO[chartElId];
-    let processedChartData;
-    if (chartInfo.chartType == 0) {
-        processedChartData = {
-            "sensorData": formatSensorData(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId)),
-            "missingData": formatSensorData(missingDataSpectrum(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId)), getChartTimeRange(chartElId))};
-    }
-    else if (chartInfo.chartType == 1) {
-        processedChartData = {
-            "sensorData": formatSensorData(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId)),
-            "missingData": formatSensorData(sensorData[chartInfo.endpointName], getChartTimeRange(chartElId))};
-    }
-
-    const debug_data_collection = [
-        {
-            "title": 'switch',
-            "value": chartInfo.chartType,
-            "type": 0
-        },
-        {
-            "title": 'processedChartData',
-            "value": processedChartData,
-            "type": 1
-        }
-    ];
-    debugHere(debug_tag, debug_data_collection);
-    return processedChartData;
-}
-
-function getChartTimeRange(chartElId) {     //Dependency to CHART_INFO
-    const chartInfo = CHARTS_INFO[chartElId];
-    if (chartInfo.chartType == 0) {
-        return {"start": new Date(new Date().getTime() - 1 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
-    }
-    else if (chartInfo.chartType == 1) {
-        return {"start": new Date(new Date().getTime() - 1 * 60 * 60 * 1000), "end": new Date(new Date().getTime() - 5 * 1000)}
-    }
-}
-
-function updateSensorDisplayEls() {     //Dependecy to sensorData and CHARTS_INFO
-    const sensorDisplayEls = document.getElementsByClassName("sensor-display");
-    const sensorStateDisplayEls = document.getElementsByClassName("sensor-state-display");
-
-    Array.from(sensorDisplayEls).forEach((sensorDisplayEl, i) => {
-        const endpointName = sensorDisplayEl.getAttribute("data-endpointName");
-        const sensorLastValue = sensorData[endpointName].at(-1).data;
-        const missingDataValue = missingDataSpectrum(sensorData[endpointName], getChartTimeRange(CHARTS_IDS[i]));
-        const sensorDisplayValue =  checkStruct(missingDataValue) ? missingDataValue.at(-1).data : sensorLastValue;
-        const sensorDisplayValuePeaks = getPeakSensorValue(sensorData[endpointName]);
-
-        const sensorDisplayValueEl = sensorDisplayEl.getElementsByClassName('__sensor-display-value')[0];
-        const sensorDisplayMinValueEl = sensorDisplayEl.getElementsByClassName('__sensor-display-min-value')[0];
-        const sensorDisplayMaxValueEl = sensorDisplayEl.getElementsByClassName('__sensor-display-max-value')[0];
-        sensorDisplayValueEl.textContent = sensorDisplayValue;
-        sensorDisplayMinValueEl.textContent = sensorDisplayValuePeaks.min;
-        sensorDisplayMaxValueEl.textContent = sensorDisplayValuePeaks.max;
     });
-    Array.from(sensorStateDisplayEls).forEach((sensorStateDisplayEl, i) => {
-        const endpointName = sensorStateDisplayEl.getAttribute("data-endpointName");
-        const sensorLastValue = sensorData[endpointName].at(-1).data;
-        const missingDataValue = missingDataSpectrum(sensorData[endpointName], getChartTimeRange(CHARTS_IDS[i]));
-        const sensorStateValue =  checkStruct(missingDataValue) ? "Unknown" : sensorLastValue.uid ? (sensorLastValue.is_valid ? "Access granted" : "Access denied") : (sensorLastValue ? "Detected" : "None");
-        const sensorStateLastState = sensorLastValue.uid ? sensorLastValue.uid : (sensorLastValue ? "Detected" : "None");
-        const sensorStateCurrentState = checkStruct(missingDataValue) ? false : sensorLastValue.uid ? (sensorLastValue.is_valid ? true : false) : (sensorLastValue ? true : false);
-
-        const sensorStateValueEl = sensorStateDisplayEl.getElementsByClassName('__sensor-state-value')[0];
-        const sensorStateLastStateEl = sensorStateDisplayEl.getElementsByClassName('__sensor-state-last-state')[0];
-        const sensorStateTrueEls = sensorStateDisplayEl.getElementsByClassName('__sensor-state-true');
-        const sensorStateFalseEls = sensorStateDisplayEl.getElementsByClassName('__sensor-state-false');
-        sensorStateValueEl.textContent = sensorStateValue;
-        sensorStateLastStateEl.textContent = sensorStateLastState;
-        Array.from(sensorStateTrueEls).forEach(sensorStateTrueEl => {
-            sensorStateCurrentState ? sensorStateTrueEl.classList.remove('hidden') : sensorStateTrueEl.classList.add('hidden');
-        })
-        Array.from(sensorStateFalseEls).forEach(sensorStateFalseEl => {
-            sensorStateCurrentState ? sensorStateFalseEl.classList.add('hidden') : sensorStateFalseEl.classList.remove('hidden');
-        })
-    });
+    return chartData;
 }
 
-function setChart(chartElId) {     //Dependecy to charData
-    const ctx = document.getElementById(chartElId).getContext('2d');
-    const chartInfo = CHARTS_INFO[chartElId];
+//Input: [{"data": "value", "createdAt": "timeString"}] or [{"data": {Object}, "createdAt": "timeString"}]
+//Output: {"before": [dataArray], "after": [dataArray]}
+function getMissingData(dataArray, chartTimeRange) {
+    const delay = 5000, predictedValue = "0";
+    const defaultMissingData = [
+        {"data": predictedValue, "createdAt": new Date(chartTimeRange.start).toString()},
+        {"data": predictedValue, "createdAt": new Date(chartTimeRange.end).toString()} 
+    ];
+
+    let missingData = {"before": [], "after": []};
+    if (!checkStruct(dataArray)) {
+        missingData.after = defaultMissingData;
+        return missingData;
+    }
+    const dataTimeRange = {"start": new Date(dataArray[0].createdAt), "end": new Date(dataArray.at(-1).createdAt)};
+
+    /*
+    [ds, de]
+    [cs, ce  ]
+    */
+    if (dataTimeRange.start <= chartTimeRange.start && dataTimeRange.end < chartTimeRange.end) {
+        missingData.after = [
+            {"data": dataArray.at(-1).data, "createdAt": new Date(dataTimeRange.end).toString()},
+            {"data": predictedValue, "createdAt": new Date(dataTimeRange.end.getTime()+delay).toString()},
+            {"data": predictedValue, "createdAt": new Date(chartTimeRange.end).toString()}
+        ];
+    }
+    /*
+      [ds, de]
+    [  cs, ce]
+    */
+    else if (dataTimeRange.start > chartTimeRange.start && dataTimeRange.end >= chartTimeRange.end) {
+        missingData.before = [
+            {"data": predictedValue, "createdAt": new Date(chartTimeRange.start).toString()},
+            {"data": predictedValue, "createdAt": new Date(dataTimeRange.start.getTime()-delay).toString()},
+            {"data": dataArray[0].data, "createdAt": new Date(dataTimeRange.start).toString()},
+        ];
+    }
+    /*
+      [ds, de]
+    [  cs, ce  ]
+    */
+    else if (dataTimeRange.start > chartTimeRange.start && dataTimeRange.end < chartTimeRange.end) {
+        missingData.before = [
+            {"data": predictedValue, "createdAt": new Date(chartTimeRange.start).toString()},
+            {"data": predictedValue, "createdAt": new Date(dataTimeRange.start.getTime()-delay).toString()},
+            {"data": dataArray[0].data, "createdAt": new Date(dataTimeRange.start).toString()},
+        ];
+        missingData.after = [
+            {"data": dataArray.at(-1).data, "createdAt": new Date(dataTimeRange.end).toString()},
+            {"data": predictedValue, "createdAt": new Date(dataTimeRange.end.getTime()+delay).toString()},
+            {"data": predictedValue, "createdAt": new Date(chartTimeRange.end).toString()}
+        ]
+    } else {
+        missingData.after = defaultMissingData;
+    }
+
+    return missingData;
+}
+
+function setChart(chartId) {
+    const ctx = document.getElementById(chartId).getContext('2d');
+    const chartInfo = CHARTS_INFO[chartId];
+    const initialChartData = getInitialChartData(chartId);
+    const chartTimeRange = getInitialChartTimeRange(chartId);
     let options, data;
 
     if (chartInfo.chartType == 0) {
@@ -333,23 +291,23 @@ function setChart(chartElId) {     //Dependecy to charData
             scales: {
                 x: {
                     type: 'time',
-                    display: true, // Remove X-axis labels
+                    display: false,
                     grid: {
-                    display: false // Remove grid lines for X-axis
+                        display: false
                     },
                     ticks: {
-                    display: true // Remove ticks (numbers) on X-axis
+                        display: false
                     },
-                    min: getChartTimeRange(chartElId).start,
-                    max: getChartTimeRange(chartElId).end
+                    min: chartTimeRange.start,
+                    max: chartTimeRange.end
                 },
                 y: {
-                    display: true, // Remove Y-axis labels
+                    display: false,
                     grid: {
-                    display: false // Remove grid lines for Y-axis
+                        display: false
                     },
                     ticks: {
-                    display: true // Remove ticks (numbers) on Y-axis
+                        display: false
                     },
                     min: 0,
                 }
@@ -358,28 +316,41 @@ function setChart(chartElId) {     //Dependecy to charData
         data = {
             datasets: [
                 { 
-                    data: getProcessedChartData(chartElId).sensorData,
+                    data: initialChartData.missingDataBefore,
                     fill: false,
                     tension: 0.5,
                     pointRadius: 0,
                     borderColor: function(context) {
                         const gradient = ctx.createLinearGradient(0, 0, context.chart.width, 0);
-                        gradient.addColorStop(0, 'rgba(31, 31, 31, 0)'); // Solid color at the start
-                        gradient.addColorStop(0.5, 'rgba(48, 228, 142, 1)'); // Start fading at 20%
-                        gradient.addColorStop(1, 'rgba(31, 31, 31, 0)'); // Solid color at the end
+                        gradient.addColorStop(0, 'rgba(31, 31, 31, 0)');
+                        gradient.addColorStop(0.5, 'rgb(228, 48, 48)');
+                        gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
                         return gradient;
                     },
                 },
                 { 
-                    data: getProcessedChartData(chartElId).missingData,
+                    data: initialChartData.sensorData,
                     fill: false,
                     tension: 0.5,
                     pointRadius: 0,
                     borderColor: function(context) {
                         const gradient = ctx.createLinearGradient(0, 0, context.chart.width, 0);
-                        gradient.addColorStop(0, 'rgba(31, 31, 31, 0)'); // Solid color at the start
-                        gradient.addColorStop(0.5, 'rgb(228, 48, 48)'); // Start fading at 20%
-                        gradient.addColorStop(1, 'rgba(31, 31, 31, 0)'); // Solid color at the end
+                        gradient.addColorStop(0, 'rgba(31, 31, 31, 0)');
+                        gradient.addColorStop(0.5, 'rgba(48, 228, 142, 1)');
+                        gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
+                        return gradient;
+                    },
+                },
+                { 
+                    data: initialChartData.missingDataAfter,
+                    fill: false,
+                    tension: 0.5,
+                    pointRadius: 0,
+                    borderColor: function(context) {
+                        const gradient = ctx.createLinearGradient(0, 0, context.chart.width, 0);
+                        gradient.addColorStop(0, 'rgba(31, 31, 31, 0)');
+                        gradient.addColorStop(0.5, 'rgb(228, 48, 48)');
+                        gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
                         return gradient;
                     },
                 },
@@ -403,7 +374,7 @@ function setChart(chartElId) {     //Dependecy to charData
             scales: {
                 x: {
                 type: 'time',
-                display: true,
+                    display: true,
                 grid: {
                     display: false
                 },
@@ -411,8 +382,8 @@ function setChart(chartElId) {     //Dependecy to charData
                     display: true,
                     stepSize: 5
                 },
-                min: getChartTimeRange(chartElId).start,
-                max: getChartTimeRange(chartElId).end
+                min: chartTimeRange.start,
+                max: chartTimeRange.end
                 },
                 y: {
                     display: true,
@@ -429,7 +400,20 @@ function setChart(chartElId) {     //Dependecy to charData
         data = {
             datasets: [
             { 
-                data: getProcessedChartData(chartElId).sensorData,
+                data: initialChartData.missingDataBefore,
+                fill: true,
+                tension: 0.5,
+                pointRadius: 0,
+                borderColor: "rgb(228, 48, 48)",
+                backgroundColor: function(context) {
+                const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
+                gradient.addColorStop(0.5, 'rgba(48, 228, 142, 0.1)');
+                gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
+                return gradient;
+                },
+            },
+            { 
+                data: initialChartData.sensorData,
                 fill: true,
                 tension: 0.5,
                 pointRadius: 0,
@@ -442,77 +426,96 @@ function setChart(chartElId) {     //Dependecy to charData
                 },
             },
             { 
-                data: getProcessedChartData(chartElId).sensorData,
+                data: initialChartData.missingDataAfter,
                 fill: true,
                 tension: 0.5,
                 pointRadius: 0,
-                borderColor: "rgba(48, 228, 142, 1)",
+                borderColor: "rgb(228, 48, 48)",
                 backgroundColor: function(context) {
                 const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
                 gradient.addColorStop(0.5, 'rgba(48, 228, 142, 0.1)');
                 gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
                 return gradient;
                 },
-            },/*
-            { 
-                data: getProcessedChartData(chartElId).missingData,
-                fill: true,
-                tension: 0.5,
-                pointRadius: 0,
-                borderColor: "rgba(228, 48, 48, 1)",
-                backgroundColor: function(context) {
-                const gradient = ctx.createLinearGradient(0, 0, 0, context.chart.height);
-                gradient.addColorStop(0.5, 'rgba(228, 48, 48, 0.1)');
-                gradient.addColorStop(1, 'rgba(31, 31, 31, 0)');
-                return gradient;
-                },
-            },*/
+            },
             ]
         };
     }
 
-    return new Chart(chartElId, {
+    return new Chart(chartId, {
         type: "line",
         data: data,
         options: options
     });
 }
 
-async function updateAll(isInit) {      //Dependecy to CHART_IDS, CHART_INFO and ChartInsts
-    const debug_tag = 'updateAll';
-
+//Dependecy to CHART_IDS, CHART_INFO and ChartInsts
+async function updateAll() {
+    //Fetch data from all GET endpoints
     for (let i = 0; i < CHARTS_IDS.length; i++) {
         const chartInfo = CHARTS_INFO[CHARTS_IDS[i]];
-        if (chartInfo.endpointType == 'GET') await fetchData(chartInfo.endpointName);
+        if (chartInfo.endpointType == 'GET') await fetchRawData(chartInfo.endpointName);
     }
+    
+    //Update display components
     updateSensorDisplayEls();
-    if (isInit) {
-        for (let i = 0; i < CHARTS_IDS.length; i++) {
-            chartInsts[CHARTS_IDS[i]] = setChart(CHARTS_IDS[i]);
-        }
-    } else {
-        for (let i = 0; i < CHARTS_IDS.length; i++) {
-            chartInsts[CHARTS_IDS[i]].data.datasets[0].data = getProcessedChartData(CHARTS_IDS[i]).sensorData;
-            chartInsts[CHARTS_IDS[i]].data.datasets[1].data = getProcessedChartData(CHARTS_IDS[i]).missingData;
-            chartInsts[CHARTS_IDS[i]].options.scales.x.min = getChartTimeRange(CHARTS_IDS[i]).start;
-            chartInsts[CHARTS_IDS[i]].options.scales.x.max = getChartTimeRange(CHARTS_IDS[i]).end;
-            chartInsts[CHARTS_IDS[i]].update();
 
-            const debug_data_collection = [
-                {
-                    "title": 'switch',
-                    "value": isInit,
-                    "type": 0
-                },
-                {
-                    "title": `chartInsts[${CHARTS_IDS[i]}].data.datasets[0].data`,
-                    "value": chartInsts[CHARTS_IDS[i]].data.datasets[0].data,
-                    "type": 1
-                }
-            ];
-            debugHere(debug_tag, debug_data_collection);
-        }
+    //Update charts
+    for (let i = 0; i < CHARTS_IDS.length; i++) {
+        const chartInfo = CHARTS_INFO[CHARTS_IDS[i]];
+        const initialChartTimeRange = getInitialChartTimeRange(CHARTS_IDS[i]);
+        const initialChartData = getInitialChartData(CHARTS_IDS[i]);
+        chartInsts[CHARTS_IDS[i]].data.datasets[0].data = initialChartData.missingDataBefore;
+        chartInsts[CHARTS_IDS[i]].data.datasets[1].data = initialChartData.sensorData;
+        chartInsts[CHARTS_IDS[i]].data.datasets[2].data = initialChartData.missingDataAfter;
+        chartInsts[CHARTS_IDS[i]].options.scales.x.min = initialChartTimeRange.start;
+        chartInsts[CHARTS_IDS[i]].options.scales.x.max = initialChartTimeRange.end;
+        chartInsts[CHARTS_IDS[i]].update();
     }
+}
+
+/* -------------------------------------------------------------------------------------------------------------------- */
+
+//Dependecy to sensorData and CHARTS_INFO
+function updateSensorDisplayEls() {
+    if (!checkStruct(sensorData)) return;
+    const sensorDisplayEls = document.getElementsByClassName("sensor-display");
+    const sensorStateDisplayEls = document.getElementsByClassName("sensor-state-display");
+
+    Array.from(sensorDisplayEls).forEach((sensorDisplayEl, i) => {
+        const endpointName = sensorDisplayEl.getAttribute("data-endpointName");
+        const missingDataValue = getMissingData(sensorData[endpointName], getInitialChartTimeRange(CHARTS_IDS[i].chartType));
+        const sensorDisplayValue =  checkStruct(missingDataValue) ? missingDataValue.at(-1).data : sensorData[endpointName].at(-1).data;
+        const sensorDisplayValuePeaks = getPeakSensorValue(sensorData[endpointName]);
+
+        const sensorDisplayValueEl = sensorDisplayEl.getElementsByClassName('__sensor-display-value')[0];
+        const sensorDisplayMinValueEl = sensorDisplayEl.getElementsByClassName('__sensor-display-min-value')[0];
+        const sensorDisplayMaxValueEl = sensorDisplayEl.getElementsByClassName('__sensor-display-max-value')[0];
+        sensorDisplayValueEl.textContent = sensorDisplayValue;
+        sensorDisplayMinValueEl.textContent = sensorDisplayValuePeaks.min;
+        sensorDisplayMaxValueEl.textContent = sensorDisplayValuePeaks.max;
+    });
+    Array.from(sensorStateDisplayEls).forEach((sensorStateDisplayEl, i) => {
+        const endpointName = sensorStateDisplayEl.getAttribute("data-endpointName");
+        const stateObjectData = getStateObjectData(sensorData[endpointName].at(-1).data);
+        const missingDataValue = getMissingData(sensorData[endpointName], getInitialChartTimeRange(CHARTS_IDS[i].chartType));
+        const sensorStateState =  checkStruct(missingDataValue) ? "Unknown" : (stateObjectData.state ? "True" : "False");
+        const sensorStateStateValue = checkStruct(missingDataValue) ? false : stateObjectData.state;
+        const sensorStateData = stateObjectData.type == 0 ? stateObjectData.data : (stateObjectData.state ? "True" : "False");
+
+        const sensorStateStateEl = sensorStateDisplayEl.getElementsByClassName('__sensor-state-value')[0];
+        const sensorStateDataEl = sensorStateDisplayEl.getElementsByClassName('__sensor-state-last-state')[0];
+        const sensorStateTrueEls = sensorStateDisplayEl.getElementsByClassName('__sensor-state-true');
+        const sensorStateFalseEls = sensorStateDisplayEl.getElementsByClassName('__sensor-state-false');
+        sensorStateStateEl.textContent = sensorStateState;
+        sensorStateDataEl.textContent = sensorStateData;
+        Array.from(sensorStateTrueEls).forEach(sensorStateTrueEl => {
+            sensorStateStateValue ? sensorStateTrueEl.classList.remove('hidden') : sensorStateTrueEl.classList.add('hidden');
+        })
+        Array.from(sensorStateFalseEls).forEach(sensorStateFalseEl => {
+            sensorStateStateValue ? sensorStateFalseEl.classList.add('hidden') : sensorStateFalseEl.classList.remove('hidden');
+        })
+    });
 }
 
 function toggleSensorChart(event) {
